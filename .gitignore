@@ -2,3 +2,4 @@
 .vscode
 .env
 .cargo
+Cargo.lock
