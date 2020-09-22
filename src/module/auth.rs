@@ -2,9 +2,9 @@ use crate::core::auth::{create_jwt, hash, PrivateClaim};
 use crate::core::database::PoolType;
 use crate::core::errors::ApiError;
 use crate::helper::respond::{respond_json, respond_ok};
-use crate::module::user::UserResponse;
-use crate::module::user::find_by_auth;
-use crate::validate::validate;
+use crate::module::user::handler::UserResponse;
+use crate::module::user::model::find_by_auth;
+use crate::core::validate::validate;
 use actix_identity::Identity;
 use actix_web::web::{block, Data, HttpResponse, Json};
 use serde::Serialize;
@@ -49,49 +49,4 @@ pub async fn login(
 pub async fn logout(id: Identity) -> Result<HttpResponse, ApiError> {
     id.forget();
     respond_ok()
-}
-
-#[cfg(test)]
-pub mod tests {
-    use super::*;
-    use crate::tests::helpers::tests::get_data_pool;
-    use actix_identity::Identity;
-    use actix_web::{test, FromRequest};
-
-    async fn get_identity() -> Identity {
-        let (request, mut payload) =
-            test::TestRequest::with_header("content-type", "application/json").to_http_parts();
-        let identity = Option::<Identity>::from_request(&request, &mut payload)
-            .await
-            .unwrap()
-            .unwrap();
-        identity
-    }
-
-    async fn login_user() -> Result<Json<UserResponse>, ApiError> {
-        let params = LoginRequest {
-            email: "satoshi@nakamotoinstitute.org".into(),
-            password: "123456".into(),
-        };
-        let identity = get_identity().await;
-        login(identity, get_data_pool(), Json(params)).await
-    }
-
-    async fn logout_user() -> Result<HttpResponse, ApiError> {
-        let identity = get_identity().await;
-        logout(identity).await
-    }
-
-    #[actix_rt::test]
-    async fn it_logs_a_user_in() {
-        let response = login_user().await;
-        assert!(response.is_ok());
-    }
-
-    #[actix_rt::test]
-    async fn it_logs_a_user_out() {
-        login_user().await.unwrap();
-        let response = logout_user().await;
-        assert!(response.is_ok());
-    }
 }

@@ -1,5 +1,5 @@
-use crate::auth::{decode_jwt, PrivateClaim};
-use crate::models::user::AuthUser;
+use crate::core::auth::{decode_jwt, PrivateClaim};
+use crate::module::user::model::AuthUser;
 use actix_identity::RequestIdentity;
 use actix_web::{
     dev::Payload,

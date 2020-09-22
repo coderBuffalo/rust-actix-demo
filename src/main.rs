@@ -12,9 +12,10 @@ extern crate validator_derive;
 use crate::core::server::server;
 
 mod core;
-mod config;
 mod helper;
 mod middleware;
+mod module;
+mod config;
 mod schema;
 
 #[actix_rt::main]

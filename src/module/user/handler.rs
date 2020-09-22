@@ -1,236 +1,149 @@
-use crate::auth::hash;
-use crate::database::PoolType;
-use crate::errors::ApiError;
-use crate::handlers::user::{UserResponse, UsersResponse};
-use crate::schema::users;
-use chrono::{NaiveDateTime, Utc};
-use diesel::prelude::*;
+use crate::core::database::PoolType;
+use crate::core::errors::ApiError;
+use crate::helper::respond::{respond_json, respond_ok};
+use crate::module::user::model::{create, delete, find, get_all, update, NewUser, UpdateUser, User};
+use crate::core::validate::validate;
+use actix_web::web::{block, Data, HttpResponse, Json, Path};
+use rayon::prelude::*;
+use serde::Serialize;
 use uuid::Uuid;
+use validator::Validate;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Queryable, Identifiable, Insertable)]
-pub struct User {
-    pub id: String,
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+pub struct UserResponse {
+    pub id: Uuid,
     pub first_name: String,
     pub last_name: String,
     pub email: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+pub struct UsersResponse(pub Vec<UserResponse>);
+
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
+pub struct CreateUserRequest {
+    #[validate(length(
+        min = 3,
+        message = "first_name is required and must be at least 3 characters"
+    ))]
+    pub first_name: String,
+
+    #[validate(length(
+        min = 3,
+        message = "last_name is required and must be at least 3 characters"
+    ))]
+    pub last_name: String,
+
+    #[validate(email(message = "email must be a valid email"))]
+    pub email: String,
+
+    #[validate(length(
+        min = 6,
+        message = "password is required and must be at least 6 characters"
+    ))]
     pub password: String,
-    pub created_by: String,
-    pub created_at: NaiveDateTime,
-    pub updated_by: String,
-    pub updated_at: NaiveDateTime,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct NewUser {
-    pub id: String,
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
+pub struct UpdateUserRequest {
+    #[validate(length(
+        min = 3,
+        message = "first_name is required and must be at least 3 characters"
+    ))]
     pub first_name: String,
+
+    #[validate(length(
+        min = 3,
+        message = "last_name is required and must be at least 3 characters"
+    ))]
     pub last_name: String,
+
+    #[validate(email(message = "email must be a valid email"))]
     pub email: String,
-    pub password: String,
-    pub created_by: String,
-    pub updated_by: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, AsChangeset)]
-#[table_name = "users"]
-pub struct UpdateUser {
-    pub id: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub email: String,
-    pub updated_by: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AuthUser {
-    pub id: String,
-    pub email: String,
+/// Get a user
+pub async fn get_user(
+    user_id: Path<Uuid>,
+    pool: Data<PoolType>,
+) -> Result<Json<UserResponse>, ApiError> {
+    let user = block(move || find(&pool, *user_id)).await?;
+    respond_json(user)
 }
 
 /// Get all users
-pub fn get_all(pool: &PoolType) -> Result<UsersResponse, ApiError> {
-    use crate::schema::users::dsl::users;
-
-    let conn = pool.get()?;
-    let all_users = users.load(&conn)?;
-
-    Ok(all_users.into())
+pub async fn get_users(pool: Data<PoolType>) -> Result<Json<UsersResponse>, ApiError> {
+    let users = block(move || get_all(&pool)).await?;
+    respond_json(users)
 }
 
-/// Find a user by the user's id or error out
-pub fn find(pool: &PoolType, user_id: Uuid) -> Result<UserResponse, ApiError> {
-    use crate::schema::users::dsl::{id, users};
+/// Create a user
+pub async fn create_user(
+    pool: Data<PoolType>,
+    params: Json<CreateUserRequest>,
+) -> Result<Json<UserResponse>, ApiError> {
+    validate(&params)?;
 
-    let not_found = format!("User {} not found", user_id);
-    let conn = pool.get()?;
-    let user = users
-        .filter(id.eq(user_id.to_string()))
-        .first::<User>(&conn)
-        .map_err(|_| ApiError::NotFound(not_found))?;
-
-    Ok(user.into())
-}
-
-/// Find a user by the user's authentication information (email + password)
-/// Return an Unauthorized error if it doesn't match
-pub fn find_by_auth(
-    pool: &PoolType,
-    user_email: &str,
-    user_password: &str,
-) -> Result<UserResponse, ApiError> {
-    use crate::schema::users::dsl::{email, password, users};
-
-    let conn = pool.get()?;
-    let user = users
-        .filter(email.eq(user_email.to_string()))
-        .filter(password.eq(user_password.to_string()))
-        .first::<User>(&conn)
-        .map_err(|_| ApiError::Unauthorized("Invalid login".into()))?;
-    Ok(user.into())
-}
-
-/// Create a new user
-pub fn create(pool: &PoolType, new_user: &User) -> Result<UserResponse, ApiError> {
-    use crate::schema::users::dsl::users;
-
-    let conn = pool.get()?;
-    diesel::insert_into(users).values(new_user).execute(&conn)?;
-    Ok(new_user.clone().into())
+    // temporarily use the new user's id for created_at/updated_at
+    // update when auth is added
+    let user_id = Uuid::new_v4();
+    let new_user: User = NewUser {
+        id: user_id.to_string(),
+        first_name: params.first_name.to_string(),
+        last_name: params.last_name.to_string(),
+        email: params.email.to_string(),
+        password: params.password.to_string(),
+        created_by: user_id.to_string(),
+        updated_by: user_id.to_string(),
+    }
+    .into();
+    let user = block(move || create(&pool, &new_user)).await?;
+    respond_json(user.into())
 }
 
 /// Update a user
-pub fn update(pool: &PoolType, update_user: &UpdateUser) -> Result<UserResponse, ApiError> {
-    use crate::schema::users::dsl::{id, users};
+pub async fn update_user(
+    user_id: Path<Uuid>,
+    pool: Data<PoolType>,
+    params: Json<UpdateUserRequest>,
+) -> Result<Json<UserResponse>, ApiError> {
+    validate(&params)?;
 
-    let conn = pool.get()?;
-    diesel::update(users)
-        .filter(id.eq(update_user.id.clone()))
-        .set(update_user)
-        .execute(&conn)?;
-    find(&pool, Uuid::parse_str(&update_user.id)?)
+    // temporarily use the user's id for updated_at
+    // update when auth is added
+    let update_user = UpdateUser {
+        id: user_id.to_string(),
+        first_name: params.first_name.to_string(),
+        last_name: params.last_name.to_string(),
+        email: params.email.to_string(),
+        updated_by: user_id.to_string(),
+    };
+    let user = block(move || update(&pool, &update_user)).await?;
+    respond_json(user.into())
 }
 
 /// Delete a user
-pub fn delete(pool: &PoolType, user_id: Uuid) -> Result<(), ApiError> {
-    use crate::schema::users::dsl::{id, users};
-
-    let conn = pool.get()?;
-    diesel::delete(users)
-        .filter(id.eq(user_id.to_string()))
-        .execute(&conn)?;
-    Ok(())
+pub async fn delete_user(
+    user_id: Path<Uuid>,
+    pool: Data<PoolType>,
+) -> Result<HttpResponse, ApiError> {
+    block(move || delete(&pool, *user_id)).await?;
+    respond_ok()
 }
 
-impl From<NewUser> for User {
-    fn from(user: NewUser) -> Self {
-        User {
-            id: user.id,
-            first_name: user.first_name,
-            last_name: user.last_name,
-            email: user.email,
-            password: hash(&user.password),
-            created_by: user.created_by,
-            created_at: Utc::now().naive_utc(),
-            updated_by: user.updated_by,
-            updated_at: Utc::now().naive_utc(),
+impl From<User> for UserResponse {
+    fn from(user: User) -> Self {
+        UserResponse {
+            id: Uuid::parse_str(&user.id).unwrap(),
+            first_name: user.first_name.to_string(),
+            last_name: user.last_name.to_string(),
+            email: user.email.to_string(),
         }
     }
 }
 
-#[cfg(test)]
-pub mod tests {
-    use super::*;
-    use crate::tests::helpers::tests::get_pool;
-
-    pub fn get_all_users() -> Result<UsersResponse, ApiError> {
-        let pool = get_pool();
-        get_all(&pool)
-    }
-
-    pub fn create_user() -> Result<UserResponse, ApiError> {
-        let user_id = Uuid::new_v4();
-        let new_user = NewUser {
-            id: user_id.to_string(),
-            first_name: "Model".to_string(),
-            last_name: "Test".to_string(),
-            email: "model-test@nothing.org".to_string(),
-            password: "123456".to_string(),
-            created_by: user_id.to_string(),
-            updated_by: user_id.to_string(),
-        };
-        let user: User = new_user.into();
-        create(&get_pool(), &user)
-    }
-
-    #[test]
-    fn it_gets_a_user() {
-        let users = get_all_users();
-        assert!(users.is_ok());
-    }
-
-    #[test]
-    fn test_find() {
-        let users = get_all_users().unwrap();
-        let user = &users.0[0];
-        let found_user = find(&get_pool(), user.id).unwrap();
-        assert_eq!(user, &found_user);
-    }
-
-    #[test]
-    fn it_doesnt_find_a_user() {
-        let user_id = Uuid::new_v4();
-        let not_found_user = find(&get_pool(), user_id);
-        assert!(not_found_user.is_err());
-    }
-
-    #[test]
-    fn it_creates_a_user() {
-        let created = create_user();
-        assert!(created.is_ok());
-        let unwrapped = created.unwrap();
-        let found_user = find(&get_pool(), unwrapped.id.clone()).unwrap();
-        assert_eq!(unwrapped, found_user);
-    }
-
-    #[test]
-    fn it_updates_a_user() {
-        let users = get_all_users().unwrap();
-        let user = &users.0[1];
-        let update_user = UpdateUser {
-            id: user.id.to_string(),
-            first_name: "ModelUpdate".to_string(),
-            last_name: "TestUpdate".to_string(),
-            email: "model-update-test@nothing.org".to_string(),
-            updated_by: user.id.to_string(),
-        };
-        let updated = update(&get_pool(), &update_user);
-        assert!(updated.is_ok());
-        let found_user = find(&get_pool(), user.id).unwrap();
-        assert_eq!(updated.unwrap(), found_user);
-    }
-
-    #[test]
-    fn it_fails_to_update_a_nonexistent_user() {
-        let user_id = Uuid::new_v4();
-        let update_user = UpdateUser {
-            id: user_id.to_string(),
-            first_name: "ModelUpdateFailure".to_string(),
-            last_name: "TestUpdateFailure".to_string(),
-            email: "model-update-failure-test@nothing.org".to_string(),
-            updated_by: user_id.to_string(),
-        };
-        let updated = update(&get_pool(), &update_user);
-        assert!(updated.is_err());
-    }
-
-    #[test]
-    fn it_deletes_a_user() {
-        let created = create_user();
-        let user_id = created.unwrap().id;
-        let user = find(&get_pool(), user_id);
-        assert!(user.is_ok());
-        delete(&get_pool(), user_id).unwrap();
-        let user = find(&get_pool(), user_id);
-        assert!(user.is_err());
+impl From<Vec<User>> for UsersResponse {
+    fn from(users: Vec<User>) -> Self {
+        UsersResponse(users.into_par_iter().map(|user| user.into()).collect())
     }
 }
