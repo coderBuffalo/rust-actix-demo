@@ -7,42 +7,39 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix = "0.10"
-actix-cors = "0.3"
-actix-files = "0.3"
-actix-identity = "0.3"
-actix-multipart = "0.3"
-actix-redis = "0.9"
+actix = "0.9.0"
+actix-cors = "0.2.0"
+actix-files = "0.2.1"
+actix-identity = "0.2.1"
+actix-redis = "0.8.0"
 actix-rt = "1"
-actix-service = "1.0.6"
-actix-web = "3.0"
-argon2rs = "0.2.5"
-async-std = "1.6.4"
+actix-service = "1.0.5"
+actix-web = "2"
+argon2rs = "0.2.1"
 chrono = { version = "0.4", features = ["serde"] }
-derive_more = "0.99"
-diesel = { version = "1.4.5", features = ["chrono", "mysql", "postgres", "sqlite", "r2d2", "uuidv07"] }
-diesel-dynamic-schema = { git = "https://github.com/diesel-rs/diesel-dynamic-schema" }
-dotenv = "0.15"
+derive_more = "0.15"
+diesel = { version = "1.4.0", features = ["chrono", "mysql", "postgres", "sqlite", "r2d2", "uuidv07"] }
+dotenv = "0.14"
 envy = "0.4"
-env_logger = "0.7"
-futures = "0.3.5"
+env_logger = "0.6"
+futures = "0.3.1"
 jsonwebtoken = "7"
 lazy_static = "1.4"
 listenfd = "0.3"
 log = "0.4"
-rayon = "1.4"
-redis-async = "0.6.2"
+rayon = "1.0"
+redis-async = "0.6.1"
 r2d2 = "0.8"
 r2d2-diesel = "1.0.0"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
-uuid = { version = "0.8", features = ["serde", "v4"] }
-validator = "0.11"
-validator_derive = "0.11"
+uuid = { version = "0.7", features = ["serde", "v4"] }
+validator = "0.8.0"
+validator_derive = "0.8.0"
 
 [dev-dependencies]
-actix-http-test = "2.0.0"
+actix-http-test = "0.2.0"
 
 [features]
 cockroach = []
